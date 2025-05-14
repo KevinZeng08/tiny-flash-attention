@@ -16,7 +16,7 @@ def flash_attn_triton(q, k, v, causal=True, sm_scale=1):
 
     o = torch.empty_like(q)
 
-    BLOCK_M = 128
+    BLOCK_M = 64 # 64 for Ada, 128 for Amphere and Hopper
     BLOCK_N = 64
     # NOTE: 对于flash attention 2, 外层循环的q可以并行处理, 因此每个thread需要计算正确的offset
     # 一个q, k, v的shape往往是(bs, head, seqlen, dim)
@@ -29,6 +29,7 @@ def flash_attn_triton(q, k, v, causal=True, sm_scale=1):
     L = torch.empty((q.shape[0] * q.shape[1], q.shape[2]), device=q.device, dtype=torch.float32)
     # 设置适当的wrap以提升性能
     num_warps = 4 if Lk <= 64 else 8
+    stage = 3 if causal else 1
     _fwd_kernel[grid](
         q, k, v, sm_scale,
         L,
@@ -41,7 +42,7 @@ def flash_attn_triton(q, k, v, causal=True, sm_scale=1):
         BLOCK_M=BLOCK_M, BLOCK_N=BLOCK_N, DIM=Lk,
         IS_CAUSAL=causal,
         num_warps=num_warps,
-        num_stages=4)
+        num_stages=stage)
 
     return o
 
